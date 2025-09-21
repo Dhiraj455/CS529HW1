@@ -38,7 +38,7 @@ export default function Whitehat(props){
             const stateData = props.data.states;
 
             //EDIT THIS TO CHANGE WHAT IS USED TO ENCODE COLOR
-            const getEncodedFeature = d => d.count
+            const getEncodedFeature = d => (d.count / d.population) * 100000;
 
             //this section of code sets up the colormap
             const stateCounts = Object.values(stateData).map(getEncodedFeature);
@@ -55,7 +55,7 @@ export default function Whitehat(props){
 
             //TODO: EDIT HERE TO CHANGE THE COLOR SCHEME
             //this function takes a number 0-1 and returns a color
-            const colorMap = d3.interpolateRdYlGn;
+            const colorMap = d3.interpolatePuBu;
 
             //this set of functions extracts the features given the state name from the geojson
             function getCount(name){
@@ -94,14 +94,21 @@ export default function Whitehat(props){
                 .attr('stroke-width',.1)
                 .on('mouseover',(e,d)=>{
                     let state = cleanString(d.properties.NAME);
-                    //this updates the brushed state
+                    // this updates the brushed state
                     if(props.brushedState !== state){
                         props.setBrushedState(state);
                     }
                     let sname = d.properties.NAME;
-                    let count = getCount(sname);
+                    let entry = stateData.filter(st => st.state === cleanString(sname))[0];
+                    let count = entry ? entry.count : 0;
+                    
+                    // Calculate the gun deaths per 100k
+                    let deathsPer100k = entry ? (entry.count / entry.population) * 100000 : 0;
+                    
                     let text = sname + '</br>'
-                        + 'Gun Deaths: ' + count;
+                        + 'Gun Deaths: ' + count + '</br>'
+                        + 'Gun Deaths per 100k: ' + deathsPer100k.toFixed(2); // Use toFixed(2) to round to two decimal places
+                    
                     tTip.html(text);
                 }).on('mousemove',(e)=>{
                     //see app.js for the helper function that makes this easier
@@ -116,7 +123,8 @@ export default function Whitehat(props){
             //draw markers for each city
             const cityData = props.data.cities
             const cityMax = d3.max(cityData.map(d=>d.count));
-            const cityScale = d3.scaleLinear()
+
+            const cityScale = d3.scaleSqrt()
                 .domain([0,cityMax])
                 .range([0,maxRadius]);
 
@@ -131,61 +139,90 @@ export default function Whitehat(props){
                 .attr('cx',d=> projection([d.lng,d.lat])[0])
                 .attr('cy',d=> projection([d.lng,d.lat])[1])
                 .attr('r',d=>cityScale(d.count))
-                .attr('opacity',.5);                
+                .attr('opacity',.6)
+                .attr('fill','red')
+                .on('mouseover',(e,d)=>{
+                    let text = d.key + '</br>'
+                        + 'Gun Deaths: ' + d.count;
+                    tTip.html(text);
+                })
+                .on('mousemove',(e)=>{
+                    props.ToolTip.moveTTipEvent(tTip,e);
+                })
+                .on('mouseout',(e)=>{
+                    props.ToolTip.hideTTip(tTip);
+                });               
 
             
             //draw a color legend, automatically scaled based on data extents
-            function drawLegend(){
-                let bounds = mapGroup.node().getBBox();
-                const barHeight = Math.min(height/10,40);
-                
-                let legendX = bounds.x + 10 + bounds.width;
-                const barWidth = Math.min((width - legendX)/3,40);
-                const fontHeight = Math.min(barWidth/2,16);
-                let legendY = bounds.y + 2*fontHeight;
-                
-                let colorLData = [];
-                //OPTIONAL: EDIT THE VALUES IN THE ARRAY TO CHANGE THE NUMBER OF ITEMS IN THE COLOR LEGEND
-                for(let ratio of [0.1,.2,.3,.4,.5,.6,.7,.8,.9,.99]){
-                    let val = (1-ratio)*stateMin + ratio*stateMax;
-                    let scaledVal = stateScale(val);
-                    let color = colorMap(scaledVal);
-                    let entry = {
-                        'x': legendX,
-                        'y': legendY,
-                        'value': val,
-                        'color':color,
-                    }
-                    entry.text = (entry.value).toFixed(0);
-            
-                    colorLData.push(entry);
-                    legendY += barHeight;
-                }
-    
-                svg.selectAll('.legendRect').remove();
-                svg.selectAll('.legendRect')
-                    .data(colorLData).enter()
-                    .append('rect').attr('class','legendRect')
-                    .attr('x',d=>d.x)
-                    .attr('y',d=>d.y)
-                    .attr('fill',d=>d.color)
-                    .attr('height',barHeight)
-                    .attr('width',barWidth);
-    
-                svg.selectAll('.legendText').remove();
-                const legendTitle = {
-                    'x': legendX - barWidth,
-                    'y': bounds.y,
-                    'text': 'Gun Deaths' 
-                }
-                svg.selectAll('.legendText')
-                    .data([legendTitle].concat(colorLData)).enter()
-                    .append('text').attr('class','legendText')
-                    .attr('x',d=>d.x+barWidth+5)
-                    .attr('y',d=>d.y+barHeight/2 + fontHeight/4)
-                    .attr('font-size',(d,i) => i == 0? 1.2*fontHeight:fontHeight)
-                    .text(d=>d.text);
-            }
+
+            function drawLegend() {
+    let bounds = mapGroup.node().getBBox();
+    const barHeight = Math.min(height / 10, 40);
+
+    let legendX = bounds.x + 10 + bounds.width;
+    const barWidth = Math.min((width - legendX) / 3, 40);
+    const fontHeight = Math.min(barWidth / 2, 16);
+    let legendY = bounds.y + 2 * fontHeight;
+
+    let colorLData = [];
+
+    // DEFINE THE NUMBER OF GROUPS FOR THE LEGEND
+    const numGroups = 4; // You can change this value (e.g., 4, 5, or 6)
+
+    // Calculate the size of each group/bin
+    const step = (stateMax - stateMin) / numGroups;
+
+    for (let i = -1; i < numGroups; i++) {
+        const lowerBound = stateMin + i * step;
+        const upperBound = stateMin + (i + 1) * step;
+
+        // Use the midpoint of the range to get a representative color
+        const midPointValue = lowerBound + (step / 2);
+        const scaledVal = stateScale(midPointValue);
+        const color = colorMap(scaledVal);
+
+        // Create a text label for the range
+        const labelText = `${lowerBound.toFixed(1)} - ${upperBound.toFixed(1)}`;
+
+        let entry = {
+            'x': legendX,
+            'y': legendY,
+            'value': midPointValue, // Storing the midpoint
+            'color': color,
+            'text': labelText,
+        };
+
+        colorLData.push(entry);
+        legendY += barHeight; // Move down for the next legend item
+    }
+
+    // This part of the code remains the same as it just draws whatever is in colorLData
+    svg.selectAll('.legendRect').remove();
+    svg.selectAll('.legendRect')
+        .data(colorLData).enter()
+        .append('rect').attr('class', 'legendRect')
+        .attr('x', d => d.x)
+        .attr('y', d => d.y)
+        .attr('fill', d => d.color)
+        .attr('height', barHeight)
+        .attr('width', barWidth);
+
+    svg.selectAll('.legendText').remove();
+    const legendTitle = {
+        'x': legendX - barWidth,
+        'y': bounds.y,
+        'text': 'Gun Deaths' // Per 100k people, etc. (add units if available)
+    };
+    svg.selectAll('.legendText')
+        .data([legendTitle].concat(colorLData)).enter()
+        .append('text').attr('class', 'legendText')
+        .attr('x', d => d.x + barWidth + 5)
+        .attr('y', d => d.y + barHeight / 2 + fontHeight / 4)
+        .attr('font-size', (d, i) => i == 0 ? 1.2 * fontHeight : fontHeight)
+        .text(d => d.text);
+}
+
 
             drawLegend();
             return mapGroup
@@ -244,10 +281,47 @@ export default function Whitehat(props){
             }
         }
         
+        function clickedCity(event, d) {
+            event.stopPropagation();
+            if (isZoomed) {
+                // Reset zoom
+                mapGroupSelection.transition().duration(300).call(
+                    zoom.transform,
+                    d3.zoomIdentity.translate(0, 0),
+                    d3.pointer(event, svg.node())
+                );
+            } else {
+                // Project city coordinates to SVG
+                const [cx, cy] = projection([d.lng, d.lat]);
+
+                mapGroupSelection.transition().duration(750).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                        .translate(width / 2, height / 2)
+                        .scale(12) // zoom factor for cities (adjust if needed)
+                        .translate(-cx, -cy),
+                    d3.pointer(event, svg.node())
+                );
+            }
+
+            // Toggle zoom state
+            isZoomed = !isZoomed;
+            if (isZoomed) {
+                props.setZoomedState(d.key); // store city name
+            } else {
+                props.setZoomedState(undefined);
+            }
+        }
+
+
 
         mapGroupSelection.selectAll('.state')
             .attr('cursor','pointer')//so we know the states are clickable
             .on('click',clicked);
+
+        mapGroupSelection.selectAll('.city')
+            .attr('cursor', 'pointer')
+            .on('click', clickedCity)
 
     },[mapGroupSelection]);
 

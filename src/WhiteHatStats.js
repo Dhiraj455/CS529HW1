@@ -12,8 +12,6 @@ export default function WhiteHatStats(props){
     const [svg, height, width, tTip] = useSVGCanvas(d3Container);
 
     const margin = 50;
-    const radius = 10;
-
 
     //TODO: modify or replace the code below to draw a more truthful or insightful representation of the dataset. This other representation could be a histogram, a stacked bar chart, etc.
     //this loop updates when the props.data changes or the window resizes
@@ -28,57 +26,56 @@ export default function WhiteHatStats(props){
         //get data for each state
         const plotData = [];
         for(let state of data){
-            const dd = drawingDifficulty[state.abreviation];
             let entry = {
                 'count': state.count,
                 'name': state.state,
-                'easeOfDrawing': dd === undefined? 5: dd,
-                'genderRatio': state.male_count/state.count,
+                'male': state.male_count,
+                'female': state.count - state.male_count,
             }
             plotData.push(entry)
         }
 
-        //get transforms for each value into x and y coordinates
-        let xScale = d3.scaleLinear()
-            .domain(d3.extent(plotData,d=>d.easeOfDrawing))
-            .range([margin+radius,width-margin-radius]);
+        //scales
+        let xScale = d3.scaleBand()
+            .domain(plotData.map(d=>d.name))
+            .range([margin, width-margin])
+            .padding(0.2);
+
         let yScale = d3.scaleLinear()
-            .domain(d3.extent(plotData,d=>d.count))
-            .range([height-margin-radius,margin+radius]);
+            .domain([0, d3.max(plotData,d=>d.count)])
+            .range([height-margin, margin]);
 
+        //color scale for genders
+        const color = d3.scaleOrdinal()
+            .domain(["male","female"])
+            .range(["#3182bd","#e6550d"]); //blue for male, orange for female (colorblind safe)
 
-        //draw a line showing the mean values across the curve
-        //this probably isn't actually regression
-        const regressionLine = [];
-        for(let i = 0; i <= 10; i+= 1){
-            let pvals = plotData.filter(d => Math.abs(d.easeOfDrawing - i) <= .5);
-            let meanY = 0;
-            if(pvals.length > 0){
-                for(let entry of pvals){
-                    meanY += entry.count/pvals.length
-                }
-            }
-            let point = [xScale(i),yScale(meanY)]
-            regressionLine.push(point)
-        }
-        
-        //scale color by gender ratio for no reason
-        let colorScale = d3.scaleDiverging()
-            .domain([0,.5,1])
-            .range(['magenta','white','navy']);
+        //stack data
+        const stackedData = d3.stack()
+            .keys(["male","female"])
+            (plotData);
 
-        //draw the circles for each state
-        svg.selectAll('.dot').remove();
-        svg.selectAll('.dot').data(plotData)
-            .enter().append('circle')
-            .attr('cy',d=> yScale(d.count))
-            .attr('cx',d=>xScale(d.easeOfDrawing))
-            .attr('fill',d=> colorScale(d.genderRatio))
-            .attr('r',10)
+        //clear previous
+        svg.selectAll('*').remove();
+
+        //draw bars
+        svg.append("g")
+            .selectAll("g")
+            .data(stackedData)
+            .enter().append("g")
+            .attr("fill", d => color(d.key))
+            .selectAll("rect")
+            .data(d => d)
+            .enter().append("rect")
+            .attr("x", d => xScale(d.data.name))
+            .attr("y", d => yScale(d[1]))
+            .attr("height", d => yScale(d[0]) - yScale(d[1]))
+            .attr("width", xScale.bandwidth())
             .on('mouseover',(e,d)=>{
-                let string = d.name + '</br>'
-                    + 'Gun Deaths: ' + d.count + '</br>'
-                    + 'Difficulty Drawing: ' + d.easeOfDrawing;
+                let string = d.data.name + '</br>'
+                    + 'Total Deaths: ' + d.data.count + '</br>'
+                    + 'Male: ' + d.data.male + '</br>'
+                    + 'Female: ' + d.data.female;
                 props.ToolTip.moveTTipEvent(tTip,e)
                 tTip.html(string)
             }).on('mousemove',(e)=>{
@@ -86,25 +83,46 @@ export default function WhiteHatStats(props){
             }).on('mouseout',(e,d)=>{
                 props.ToolTip.hideTTip(tTip);
             });
-           
-        //draw the line
-        svg.selectAll('.regressionLine').remove();
-        svg.append('path').attr('class','regressionLine')
-            .attr('d',d3.line().curve(d3.curveBasis)(regressionLine))
-            .attr('stroke-width',5)
-            .attr('stroke','black')
-            .attr('fill','none');
+
+        //draw basic axes using the x and y scales
+        svg.append('g')
+            .attr('transform',`translate(0,${height-margin+1})`)
+            .call(d3.axisBottom(xScale))
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-0.8em")
+            .attr("dy", "0.15em")
+            .attr("transform", "rotate(-45)");
+        svg.append('g')
+            .attr('transform',`translate(${margin-2},0)`)
+            .call(d3.axisLeft(yScale))
 
         //change the title
         const labelSize = margin/2;
-        svg.selectAll('text').remove();
         svg.append('text')
             .attr('x',width/2)
             .attr('y',labelSize)
             .attr('text-anchor','middle')
             .attr('font-size',labelSize)
             .attr('font-weight','bold')
-            .text('How Hard it Is To Draw Each State Vs Gun Deaths');
+            .text('Gun Deaths by Gender per State');
+
+        //legend
+        const legend = svg.append("g")
+            .attr("transform",`translate(${width - margin*2}, ${margin})`);
+
+        ["male","female"].forEach((key,i)=>{
+            legend.append("rect")
+                .attr("x",0)
+                .attr("y",i*20)
+                .attr("width",12)
+                .attr("height",12)
+                .attr("fill",color(key));
+            legend.append("text")
+                .attr("x",18)
+                .attr("y",i*20+10)
+                .text(key.charAt(0).toUpperCase() + key.slice(1));
+        });
 
         //change the disclaimer here
         svg.append('text')
@@ -112,17 +130,7 @@ export default function WhiteHatStats(props){
             .attr('y',height/3)
             .attr('text-anchor','end')
             .attr('font-size',10)
-            .text("I'm just asking questions");
-
-        //draw basic axes using the x and y scales
-        svg.selectAll('g').remove()
-        svg.append('g')
-            .attr('transform',`translate(0,${height-margin+1})`)
-            .call(d3.axisBottom(xScale))
-
-        svg.append('g')
-            .attr('transform',`translate(${margin-2},0)`)
-            .call(d3.axisLeft(yScale))
+            .text("Stacked bar chart: gender-based analysis");
         
     },[props.data,svg]);
 
