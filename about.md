@@ -13,3 +13,12 @@ This work is "white-hat" because it emphasizes integrity and fairness in how the
 - **Gun violence dataset**: [Slate – Every American Gun Death Since Newtown](https://www.slate.com/articles/news_and_politics/crime/2012/12/gun_death_tally_every_american_gun_death_since_newtown_sandy_hook_shooting.html)  
 - **Inspiration for D3 patterns**: [D3.js Documentation](https://d3js.org/) and community examples.  
 - **Colorbrewer**: [Colorbrewer of PuBu](https://colorbrewer2.org/#type=sequential&scheme=PuBu&n=3)
+
+## Demo Video
+
+Watch the demo here: [WhiteHat Visualization Demo](https://drive.google.com/file/d/1X0q-KCCG3ktB_GrCWPVu2hkMqkCNinZt/view?usp=sharing)
+
+
+<iframe src="https://drive.google.com/file/d/1X0q-KCCG3ktB_GrCWPVu2hkMqkCNinZt/preview" 
+        width="640" height="480" allow="autoplay">
+</iframe>
